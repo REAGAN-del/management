@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sessions – LTC</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+<script src="/data.js"></script>
+<script src="/layout.js"></script>
+<script>
+  let db = loadDB(), pid = db.programs[0]?.id, sid = null, err = "";
+
+  const rate = (tid, p) => {
+    let m = 0, ok = 0;
+    db.sessions.filter(s => s.pid == p).forEach(s => {
+      const v = db.attendance[s.id + ":" + tid]; if (v) { m++; if (v === "P") ok++; }
+    });
+    return m ? Math.round(ok * 100 / m) : null;
+  };
+
+  function render() {
+    const enrolled = db.enrollments.filter(e => e.pid == pid);
+    const sessions = db.sessions.filter(s => s.pid == pid).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+    const form = `<div class="p-5"><div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
+      <div><label class="text-xs text-slate-500">Program</label>
+        <select id="prog" class="${INP}">${db.programs.map(p => `<option value="${p.id}" ${p.id == pid ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></div>
+      <div><label class="text-xs text-slate-500">Date</label><input id="date" type="date" value="${today()}" class="${INP}"></div>
+      <div><label class="text-xs text-slate-500">Topic</label><input id="topic" placeholder="e.g. CSS flexbox" class="${INP}"></div>
+      <button data-act="add" class="${BTN}">Add session</button>
+    </div><p class="mt-2 text-sm text-rose-600">${err}</p></div>`;
+
+    const rows = sessions.map(s => {
+      const marked = enrolled.filter(e => db.attendance[s.id + ":" + e.tid]).length;
+      return `<tr class="hover:bg-slate-50">
+        <td class="px-5 py-3">${s.date}</td><td class="px-5 py-3 font-medium">${esc(s.title)}</td>
+        <td class="px-5 py-3">${marked}/${enrolled.length}</td>
+        <td class="px-5 py-3"><button data-open="${s.id}" class="${BTN}">Mark attendance</button></td></tr>`;
+    }).join("") || empty(4, "No session yet for this program.");
+
+    let att = "";
+    const s = sid ? byId(db.sessions, sid) : null;
+    if (s) {
+      att = card(`Attendance · ${s.date} · ${esc(s.title)}`, `<ul class="divide-y divide-slate-100">` +
+        (enrolled.map(e => {
+          const t = byId(db.trainees, e.tid), v = db.attendance[s.id + ":" + t.id], r = rate(t.id, pid);
+          const on = (x, c) => v === x ? c + " text-white border-transparent" : "border-slate-300 hover:bg-slate-100";
+          return `<li class="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
+            <div><span class="font-medium">${esc(t.name)}</span>
+              <span class="ml-2 text-xs ${r === null ? "text-slate-400" : r >= 75 ? "text-emerald-600" : "text-rose-600"}">${r === null ? "no data" : r + "% attendance"}</span></div>
+            <div class="flex gap-2">
+              <button data-mark="${s.id}:${t.id}:P" class="rounded-lg border px-3 py-1.5 text-xs font-semibold ${on("P", "bg-emerald-600")}">Present</button>
+              <button data-mark="${s.id}:${t.id}:A" class="rounded-lg border px-3 py-1.5 text-xs font-semibold ${on("A", "bg-rose-600")}">Absent</button>
+            </div></li>`;
+        }).join("") || `<li class="px-5 py-6 text-center text-slate-400">No trainee enrolled in this program.</li>`) + `</ul>`);
+    }
+
+    mount("sessions.html", "Sessions", "Add sessions and mark attendance",
+      card("New session", form) + card("Sessions", tableHTML(["Date", "Topic", "Marked", ""], "rows", rows)) + att);
+  }
+
+  document.addEventListener("change", e => { if (e.target.id === "prog") { pid = +e.target.value; sid = null; render(); } });
+  document.addEventListener("click", e => {
+    const o = e.target.closest("[data-open]");
+    if (o) { sid = +o.dataset.open; return render(); }
+    const m = e.target.closest("[data-mark]");
+    if (m) { const [s, t, v] = m.dataset.mark.split(":"); db.attendance[s + ":" + t] = v; saveDB(db); return render(); }
+    if (e.target.closest("[data-act='add']")) {
+      const date = document.getElementById("date").value, topic = document.getElementById("topic").value.trim();
+      pid = +document.getElementById("prog").value;
+      if (!date || topic.length < 2) { err = "Enter a date and a topic."; return render(); }
+      const ns = { id: nextId(db), pid, date, title: topic }; db.sessions.push(ns); sid = ns.id;
+      err = ""; saveDB(db); render();
+    }
+  });
+  render();
+</script>
+</body>
+</html>

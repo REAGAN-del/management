@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payments – LTC</title>
+  <link rel="stylesheet" href="./src/style.css">
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #receipt, #receipt * { visibility: visible; }
+      #receipt { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+<script src="/data.js"></script>
+<script src="/layout.js"></script>
+<script>
+  let db = loadDB(), err = "", rcId = null, selEid = null;
+  const rno = p => "RC-" + String(p.id).padStart(4, "0");
+  const label = e => byId(db.trainees, e.tid).name + " – " + byId(db.programs, e.pid).name;
+
+  function receiptHTML() {
+    const p = byId(db.payments, rcId), e = byId(db.enrollments, p.eid);
+    const t = byId(db.trainees, e.tid), g = byId(db.programs, e.pid);
+    const after = g.fee - db.payments.filter(x => x.eid == e.id && x.id <= p.id).reduce((a, x) => a + x.amount, 0);
+    const line = (a, b) => `<div class="flex justify-between border-b border-dashed border-slate-300 py-1.5 text-sm"><span class="text-slate-500">${a}</span><b>${b}</b></div>`;
+    return `<div class="fixed inset-0 z-40 grid place-items-center bg-black/50 p-4">
+      <div id="receipt" class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl border-t-8 border-slate-900">
+        <h2 class="text-center text-lg font-bold">Lead Training Center</h2>
+        <p class="mb-3 text-center text-xs text-slate-500">Payment receipt</p>
+        ${line("Receipt no.", rno(p))}${line("Date", p.date)}${line("Trainee", esc(t.name))}${line("Program", esc(g.name))}
+        ${line("Program fee", xaf(g.fee))}${line("Method", p.method)}${line("Amount paid", xaf(p.amount))}${line("Balance after", xaf(after))}
+        <div class="no-print mt-4 flex gap-2">
+          <button data-act="print" class="${BTN}">Print</button>
+          <button data-act="close" class="${BTN_S}">Close</button>
+        </div>
+      </div></div>`;
+  }
+
+  function render() {
+    const open = db.enrollments.filter(e => balOf(db, e.id) > 0);
+    const form = `<div class="p-5"><div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end">
+      <div class="lg:col-span-2"><label class="text-xs text-slate-500">Trainee and program</label>
+        <select id="eid" class="${INP}">${open.map(e => `<option value="${e.id}" ${e.id == selEid ? "selected" : ""}>${esc(label(e))} (balance ${xaf(balOf(db, e.id))})</option>`).join("") || "<option value=''>Everyone is fully paid</option>"}</select></div>
+      <div><label class="text-xs text-slate-500">Amount (XAF)</label><input id="amount" type="number" min="1" class="${INP}"></div>
+      <div><label class="text-xs text-slate-500">Date</label><input id="date" type="date" value="${today()}" class="${INP}"></div>
+      <div><label class="text-xs text-slate-500">Method</label><select id="method" class="${INP}"><option>Cash</option><option>Mobile money</option></select></div>
+    </div><div class="mt-3"><button data-act="pay" class="${BTN_G}">Save payment</button></div>
+    <p class="mt-2 text-sm text-rose-600">${err}</p></div>`;
+
+    const rows = db.payments.slice().reverse().map(p => {
+      const e = byId(db.enrollments, p.eid);
+      return `<tr class="hover:bg-slate-50">
+        <td class="px-5 py-3">${rno(p)}</td><td class="px-5 py-3">${p.date}</td>
+        <td class="px-5 py-3 font-medium">${esc(byId(db.trainees, e.tid).name)}</td>
+        <td class="px-5 py-3 font-semibold text-emerald-600 tabular-nums">${xaf(p.amount)}</td>
+        <td class="px-5 py-3">${p.method}</td>
+        <td class="px-5 py-3"><button data-rcpt="${p.id}" class="${BTN_S}">Receipt</button></td></tr>`;
+    }).join("") || empty(6, "No payment yet.");
+
+    mount("payments.html", "Payments", "Record installments and print receipts",
+      card("Record a payment", form) +
+      card("Payment history", tableHTML(["Receipt", "Date", "Trainee", "Amount", "Method", ""], "rows", rows)) +
+      (rcId ? receiptHTML() : ""));
+  }
+
+  document.addEventListener("click", e => {
+    const r = e.target.closest("[data-rcpt]");
+    if (r) { rcId = +r.dataset.rcpt; return render(); }
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "close") { rcId = null; return render(); }
+    if (act === "print") return window.print();
+    if (act === "pay") {
+      const eid = +document.getElementById("eid").value, amount = +document.getElementById("amount").value;
+      selEid = eid;
+      if (!eid) { err = "No trainee with a balance to pay."; return render(); }
+      if (!(amount > 0) || amount % 1) { err = "Enter a whole amount greater than 0."; return render(); }
+      if (amount > balOf(db, eid)) { err = "That is more than the balance (" + xaf(balOf(db, eid)) + ")."; return render(); }
+      const p = { id: nextId(db), eid, amount, date: document.getElementById("date").value || today(), method: document.getElementById("method").value };
+      db.payments.push(p); err = ""; rcId = p.id; saveDB(db); render();
+    }
+  });
+  render();
+</script>
+</body>
+</html>

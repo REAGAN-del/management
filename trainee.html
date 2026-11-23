@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trainees – LTC</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+<script src="/data.js"></script>
+<script src="/layout.js"></script>
+<script>
+  let db = loadDB(), editId = null, q = "", err = "";
+
+  function rowsHTML() {
+    const s = q.toLowerCase();
+    const list = db.trainees.filter(t =>
+      t.name.toLowerCase().includes(s) || t.phone.replace(/\s/g, "").includes(s.replace(/\s/g, "")));
+    return list.map(t => {
+      const progs = db.enrollments.filter(e => e.tid == t.id).map(e => byId(db.programs, e.pid).name);
+      return `<tr class="hover:bg-slate-50">
+        <td class="px-5 py-3 font-medium">${esc(t.name)}</td>
+        <td class="px-5 py-3">${esc(t.phone)}</td>
+        <td class="px-5 py-3 text-slate-600">${progs.map(esc).join(", ") || "—"}</td>
+        <td class="px-5 py-3"><button data-edit="${t.id}" class="${BTN_S}">Edit</button></td></tr>`;
+    }).join("") || empty(4, "No trainee found.");
+  }
+
+  function render() {
+    const t = editId ? byId(db.trainees, editId) : null;
+    const form = `<div class="p-5"><div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
+      <div><label class="text-xs text-slate-500">Full name</label><input id="name" class="${INP}" value="${t ? esc(t.name) : ""}"></div>
+      <div><label class="text-xs text-slate-500">Phone</label><input id="phone" inputmode="tel" class="${INP}" value="${t ? esc(t.phone) : ""}"></div>
+      ${t ? "" : `<div><label class="text-xs text-slate-500">Enroll in program (optional)</label>
+        <select id="prog" class="${INP}"><option value="">—</option>${db.programs.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></div>`}
+      <div class="flex gap-2"><button data-act="save" class="${BTN}">${t ? "Save changes" : "Register"}</button>
+        ${t ? `<button data-act="cancel" class="${BTN_S}">Cancel</button>` : ""}</div>
+    </div><p class="mt-2 text-sm text-rose-600">${err}</p></div>`;
+
+    const search = `<input id="search" type="search" placeholder="Search name or phone…" value="${esc(q)}" class="w-56 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+    mount("trainee.html", "Trainees", "Register and manage trainees",
+      card(t ? "Edit trainee" : "Register a trainee", form) +
+      card("All trainees", tableHTML(["Name", "Phone", "Programs", ""], "rows", rowsHTML()), search));
+    if (q) { const s = document.getElementById("search"); s.focus(); s.setSelectionRange(q.length, q.length); }
+  }
+
+  document.addEventListener("click", e => {
+    const ed = e.target.closest("[data-edit]");
+    if (ed) { editId = +ed.dataset.edit; err = ""; return render(); }
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "cancel") { editId = null; err = ""; return render(); }
+    if (act === "save") {
+      const name = document.getElementById("name").value.trim();
+      const phone = document.getElementById("phone").value.trim();
+      if (name.length < 2) { err = "Please enter the full name."; return render(); }
+      if (!/^[0-9+ ]{8,16}$/.test(phone)) { err = "Enter a valid phone number (digits, at least 8)."; return render(); }
+      if (editId) { const t = byId(db.trainees, editId); t.name = name; t.phone = phone; editId = null; }
+      else {
+        const nt = { id: nextId(db), name, phone }; db.trainees.push(nt);
+        const p = document.getElementById("prog").value;
+        if (p) db.enrollments.push({ id: nextId(db), tid: nt.id, pid: +p });
+      }
+      err = ""; saveDB(db); render();
+    }
+  });
+  document.addEventListener("input", e => {
+    if (e.target.id === "search") { q = e.target.value; document.getElementById("rows").innerHTML = rowsHTML(); }
+  });
+  render();
+</script>
+</body>
+</html>

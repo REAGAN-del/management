@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Programs – LTC</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+<script src="/data.js"></script>
+<script src="/layout.js"></script>
+<script>
+  let db = loadDB(), editId = null, err = "";
+
+  function render() {
+    const p = editId ? byId(db.programs, editId) : null;
+    const form = `<div class="p-5"><div class="grid gap-3 sm:grid-cols-3 items-end">
+      <div><label class="text-xs text-slate-500">Program name</label><input id="pname" class="${INP}" value="${p ? esc(p.name) : ""}"></div>
+      <div><label class="text-xs text-slate-500">Fee (XAF)</label><input id="pfee" type="number" min="1" class="${INP}" value="${p ? p.fee : ""}"></div>
+      <div class="flex gap-2"><button data-act="save" class="${BTN}">${p ? "Save changes" : "Add program"}</button>
+        ${p ? `<button data-act="cancel" class="${BTN_S}">Cancel</button>` : ""}</div>
+    </div><p class="mt-2 text-sm text-rose-600">${err}</p></div>`;
+
+    const rows = db.programs.map(x => {
+      const n = db.enrollments.filter(e => e.pid == x.id).length;
+      return `<tr class="hover:bg-slate-50">
+        <td class="px-5 py-3 font-medium">${esc(x.name)}</td>
+        <td class="px-5 py-3 tabular-nums">${xaf(x.fee)}</td>
+        <td class="px-5 py-3">${n}</td>
+        <td class="px-5 py-3"><button data-edit="${x.id}" class="${BTN_S}">Edit</button></td></tr>`;
+    }).join("") || empty(4, "No program yet.");
+
+    mount("program.html", "Programs", "Set up programs and their fees",
+      card(p ? "Edit program" : "New program", form) +
+      card("All programs", tableHTML(["Program", "Fee", "Enrolled", ""], "rows", rows)));
+  }
+
+  document.addEventListener("click", e => {
+    const ed = e.target.closest("[data-edit]");
+    if (ed) { editId = +ed.dataset.edit; err = ""; return render(); }
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "cancel") { editId = null; err = ""; return render(); }
+    if (act === "save") {
+      const name = document.getElementById("pname").value.trim();
+      const fee = +document.getElementById("pfee").value;
+      if (name.length < 2 || !(fee > 0)) { err = "Enter a program name and a fee greater than 0."; return render(); }
+      if (editId) { const p = byId(db.programs, editId); p.name = name; p.fee = fee; editId = null; }
+      else db.programs.push({ id: nextId(db), name, fee });
+      err = ""; saveDB(db); render();
+    }
+  });
+  render();
+</script>
+</body>
+</html>
